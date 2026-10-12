@@ -53,6 +53,7 @@ docs/
   detection-module.md         Detection primitives, learned baselines, and verdicts
   recovery-module.md          Recovery actions and autonomy tiers (R2 and R5 implemented)
   patterns/                   One doc per self-healing pattern (detection signal -> decision -> recovery action)
+  lessons/                    Write-ups of what building the reference pipeline taught, starting with D1's false positives
 reference-impl/
   transaction-pipeline/       Transaction pipeline (Java / Spring Boot): synthetic generator, three
                               stages, per-client failure injection, the detection module, and
