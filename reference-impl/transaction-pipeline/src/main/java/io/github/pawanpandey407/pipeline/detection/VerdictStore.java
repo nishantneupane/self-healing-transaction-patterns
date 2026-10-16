@@ -38,7 +38,20 @@ public class VerdictStore {
 
     /** Returns true if the verdict was recorded, false if cooled down. */
     public boolean add(Verdict verdict) {
-        String key = verdict.primitive() + ":" + verdict.subject();
+        return add(verdict, "");
+    }
+
+    /**
+     * Records a verdict for one of several conditions a primitive reports
+     * on the same subject, with a cooldown per condition. D4 reports zero
+     * arrivals, a partial drop and a surge on the same pipeline; a path
+     * that degrades and then dies must still record the zero verdict while
+     * the drop verdict's cooldown runs.
+     *
+     * Returns true if the verdict was recorded, false if cooled down.
+     */
+    public boolean add(Verdict verdict, String condition) {
+        String key = verdict.primitive() + ":" + verdict.subject() + ":" + condition;
         long now = System.currentTimeMillis();
         Long last = lastEmittedMs.get(key);
         if (last != null && now - last < props.getCooldownSeconds() * 1000) {

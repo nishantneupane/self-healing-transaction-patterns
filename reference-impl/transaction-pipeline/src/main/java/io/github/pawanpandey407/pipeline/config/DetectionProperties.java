@@ -36,7 +36,7 @@ public class DetectionProperties {
     /** D5 alarms when the trend reaches saturation within this horizon. */
     private long projectionHorizonSeconds = 600;
 
-    /** Minimum seconds between repeated verdicts for the same subject. */
+    /** Minimum seconds between repeated verdicts for the same subject and condition. */
     private long cooldownSeconds = 60;
 
     /**
@@ -55,7 +55,7 @@ public class DetectionProperties {
      */
     private double learnAlpha = 0.01;
 
-    /** D1: consecutive divergent windows required before a verdict. */
+    /** D1 and D4: consecutive divergent (D1) or low (D4 partial drop) windows required before a verdict. */
     private int confirmWindows = 2;
 
     /**

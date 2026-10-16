@@ -66,8 +66,16 @@ Each primitive defines a signal, a baseline, a trigger policy, and verdict conte
 
 - **Signal:** transaction arrival rate slope, and arrival rate vs unique-transaction rate.
 - **Baseline:** rolling arrival rate with time-of-day awareness.
-- **Trigger:** slope exceeding baseline variance (surge, Family 4); arrival diverging from unique-transaction rate (retry storm, pattern 3.2); arrival dropping toward zero while the pipeline reports healthy (traffic-path failure, Family 1.3).
+- **Trigger:** slope exceeding baseline variance (surge, Family 4); arrival diverging from unique-transaction rate (retry storm, pattern 3.2); arrival dropping toward zero while the pipeline reports healthy (traffic-path failure, Family 1.3). The drop has two rules:
+  - **Zero arrivals** while the baseline expects traffic fire at once. This stays a rule of its own rather than the bottom of the band, because on a noisy baseline the band's lower edge is below zero.
+  - **A partial drop** fires when arrivals fall below both mean - sigma * stddev and mean * (1 - relative-floor) for `confirm-windows` consecutive windows. A low window is neither flagged nor learned while it waits for confirmation, so a lasting drop keeps firing instead of becoming the baseline.
 - **Verdict:** direction and shape of the anomaly, plus which downstream primitives it should arm.
+  - **Wording:** "traffic-path failure signature" is reserved for zero. The partial-drop verdict is neutral, because the reference generator is closed-loop: a slow stage cuts arrivals, and that is back-pressure, not a dead path.
+  - **Cooldowns:** they run per condition (zero, drop, surge), so a drop verdict does not mute the zero verdict of a path that degrades and then dies.
+- **Limits:**
+  - A drop shallower than `relative-floor` (30% at defaults) never fires.
+  - A drop that flaps, low one window and in band the next, never confirms.
+  - A lasting legitimate drop is never learned, so it alarms once per cooldown for as long as the old baseline stands.
 
 ### D5. Saturation trending
 
@@ -100,7 +108,7 @@ The spec is testable because the reference pipeline's behavior is fully known:
 2. **D1 check.** Add per-client failure injection to the pipeline configuration (currently failure probability is per-stage only; a per-client override is the one extension the pipeline needs for this module), raise one client's authorization failures, expect a D1 verdict naming that client and stage while fleet-level primitives stay quiet.
 3. **D2 check.** Raise settlement failure probability; expect a D2 verdict on the settlement share shift.
 4. **D3 check.** Raise settlement latency range; expect a D3 verdict localizing to settlement.
-5. **D4 check.** Drop the generator interval sharply; expect a D4 surge verdict. Stop the generator; expect a D4 zero-arrival verdict, the Family 1.3 signature.
+5. **D4 check.** Drop the generator interval sharply; expect a D4 surge verdict. Stop the generator; expect a D4 zero-arrival verdict, the Family 1.3 signature. Raise settlement latency to 300-500 ms; the closed-loop generator slows, and after two windows expect a D4 partial-drop verdict alongside D3's.
 
 ## Non-goals
 
