@@ -21,7 +21,11 @@ public class DetectionProperties {
     /** Deviation multiplier: trigger beyond mean + sigma * stddev. */
     private double sigma = 3.0;
 
-    /** Minimum observations in a window before a ratio is evaluated. */
+    /**
+     * Minimum observations in a window before a ratio is evaluated. D1
+     * still judges thinner windows for its confirm streak, but does not
+     * learn from them or name a client on them.
+     */
     private int minWindowSamples = 10;
 
     /** Minimum absolute ratio change (D1, D2) worth a verdict. */

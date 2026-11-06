@@ -44,6 +44,8 @@ Each primitive defines a signal, a baseline, a trigger policy, and verdict conte
 - **Signal:** per-client failure ratio over a sliding window.
 - **Baseline:** each client's own historical failure ratio, learned per time-of-day bucket.
 - **Trigger:** a client's ratio exceeds its own baseline by a sustained margin while the fleet ratio does not. The fleet-quiet condition is the point: this primitive exists to catch what averages hide.
+  - **Sustained** means `confirm-windows` consecutive windows. A client with no live traffic in a window loses its streak, so an isolated client starts over after its release.
+  - **Thin windows**, below `min-window-samples`, are still judged by the exact test for the streak, since the test already weighs the window's size. A thin window that is failing keeps the streak alive and an ordinary one breaks it, but a thin window is never learned and never names a client.
 - **Verdict:** the client, its current vs baseline ratio, the failing stage distribution for that client's transactions.
 
 **Field note:** when a single client's failures diverged in production, the cause was usually specific to that client: their option configurations, or the fact that their data involved chip features handled through an external vendor's service. Different clients genuinely run different code paths and dependency chains through the same pipeline. That is why per-client divergence is a first-class primitive and why its verdict includes the failing stage rather than just the ratio: the next question is always which part of that client's particular path broke.

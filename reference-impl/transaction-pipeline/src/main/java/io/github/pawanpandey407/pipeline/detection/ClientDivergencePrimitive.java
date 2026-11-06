@@ -34,7 +34,12 @@ import java.util.concurrent.ConcurrentMap;
  *   and borderline windows never enter the baseline they will be judged
  *   against, so an incident cannot redefine normal.</li>
  *   <li>A client must diverge in consecutive windows before it is named.
- *   One unlucky window is not an incident.</li>
+ *   One unlucky window is not an incident. A client with no live traffic
+ *   in a window loses its streak, which is also how an isolated client
+ *   starts over after its release. A thin window still counts: the exact
+ *   test already weighs its size, so a thin window that is failing keeps
+ *   the streak alive and an ordinary one breaks it, but it is too little
+ *   to learn from or to name a client on.</li>
  * </ul>
  */
 @Component
@@ -71,14 +76,12 @@ public class ClientDivergencePrimitive implements DetectionPrimitive {
 
         Set<String> clients = new HashSet<>(w.successByClient().keySet());
         clients.addAll(w.failureByClient().keySet());
+        consecutiveDivergent.keySet().retainAll(clients);
 
         long learnedFailures = 0;
         long learnedTransactions = 0;
         for (String client : clients) {
             long n = w.clientTotal(client);
-            if (n < props.getMinWindowSamples()) {
-                continue;
-            }
             long k = w.failureByClient().getOrDefault(client, 0L);
             BaselineStore.RateBaseline own = baselines.rate(name(), client, w.hourBucket());
             double expected = expectedRate(own, fleetRate);
@@ -86,14 +89,18 @@ public class ClientDivergencePrimitive implements DetectionPrimitive {
             double ratio = (double) k / n;
 
             boolean divergent = tail < props.getDivergenceAlpha() && ratio - expected >= props.getRatioFloor();
+            int streak = divergent ? consecutiveDivergent.merge(client, 1, Integer::sum) : 0;
+            if (!divergent) {
+                consecutiveDivergent.remove(client);
+            }
+            if (n < props.getMinWindowSamples()) {
+                continue;
+            }
+
             if (tail >= props.getLearnAlpha()) {
                 own.add(k, n);
                 learnedFailures += k;
                 learnedTransactions += n;
-            }
-            int streak = divergent ? consecutiveDivergent.merge(client, 1, Integer::sum) : 0;
-            if (!divergent) {
-                consecutiveDivergent.remove(client);
             }
 
             if (divergent && warmedUp && streak >= props.getConfirmWindows()

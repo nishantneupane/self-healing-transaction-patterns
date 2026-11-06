@@ -15,6 +15,7 @@ class ClientDivergencePrimitiveTest {
 
     private static final int HOUR = 12;
     private static final int PER_CLIENT = 12;
+    private static final int THIN = 6;
     private static final List<String> CLIENTS = List.of("client-1", "client-2", "client-3", "client-4", "client-5");
 
     private final List<Verdict> published = new ArrayList<>();
@@ -124,6 +125,63 @@ class ClientDivergencePrimitiveTest {
         assertThat(published).hasSize(1);
     }
 
+    @Test
+    void aClientAbsentFromAWindowLosesItsStreak() {
+        warmUp();
+
+        assertThat(d1.observe(window(Map.of("client-3", PER_CLIENT)))).isEmpty();
+        // No live traffic, as for a client that is isolated.
+        for (int i = 0; i < 40; i++) {
+            assertThat(d1.observe(window(Map.of(), Map.of("client-3", 0)))).isEmpty();
+        }
+        assertThat(d1.observe(window(Map.of("client-3", PER_CLIENT)))).isEmpty();
+
+        // The next divergent window is the second in a row, and the verdict says so.
+        assertThat(d1.observe(window(Map.of("client-3", PER_CLIENT)))).singleElement()
+                .satisfies(v -> assertThat(v.evidence().get("consecutiveWindows")).isEqualTo(2));
+    }
+
+    @Test
+    void aThinHealthyWindowBreaksTheStreak() {
+        warmUp();
+
+        assertThat(d1.observe(window(Map.of("client-3", PER_CLIENT)))).isEmpty();
+        assertThat(d1.observe(window(Map.of(), Map.of("client-3", THIN)))).isEmpty();
+        assertThat(d1.observe(window(Map.of("client-3", PER_CLIENT)))).isEmpty();
+    }
+
+    @Test
+    void anOrdinaryThinWindowWithOneDeclineBreaksTheStreak() {
+        warmUp();
+
+        assertThat(d1.observe(window(Map.of("client-3", PER_CLIENT)))).isEmpty();
+        assertThat(d1.observe(window(Map.of("client-3", 1), Map.of("client-3", THIN)))).isEmpty();
+        assertThat(d1.observe(window(Map.of("client-3", PER_CLIENT)))).isEmpty();
+    }
+
+    @Test
+    void aThinWindowThatIsFailingKeepsTheStreakButNamesNoOne() {
+        warmUp();
+
+        assertThat(d1.observe(window(Map.of("client-3", PER_CLIENT)))).isEmpty();
+        // Second divergent window in a row, but too thin to name a client on.
+        assertThat(d1.observe(window(Map.of("client-3", THIN), Map.of("client-3", THIN)))).isEmpty();
+
+        assertThat(d1.observe(window(Map.of("client-3", PER_CLIENT)))).singleElement()
+                .satisfies(v -> assertThat(v.evidence().get("consecutiveWindows")).isEqualTo(3));
+    }
+
+    @Test
+    void aThinWindowIsNeverLearned() {
+        warmUp();
+        BaselineStore.RateBaseline own = baselines.rate(ClientDivergencePrimitive.NAME, "client-3", HOUR);
+        double transactionsBefore = own.transactions();
+
+        d1.observe(window(Map.of(), Map.of("client-3", THIN)));
+
+        assertThat(own.transactions()).isEqualTo(transactionsBefore);
+    }
+
     private void warmUp() {
         for (int i = 0; i < 3; i++) {
             assertThat(d1.observe(window(Map.of()))).isEmpty();
@@ -132,21 +190,27 @@ class ClientDivergencePrimitiveTest {
 
     /** One window with PER_CLIENT transactions for every client; the map gives failures per client. */
     private static WindowSnapshot window(Map<String, Integer> failures) {
+        return window(failures, Map.of());
+    }
+
+    /** As above, with some clients' transaction counts overridden; zero means absent from the window. */
+    private static WindowSnapshot window(Map<String, Integer> failures, Map<String, Integer> totals) {
         Map<String, Long> success = new HashMap<>();
         Map<String, Long> failure = new HashMap<>();
         Map<String, Map<String, Long>> byClientStage = new HashMap<>();
         long processed = 0;
         long failed = 0;
         for (String client : CLIENTS) {
+            int total = totals.getOrDefault(client, PER_CLIENT);
             int f = failures.getOrDefault(client, 0);
-            if (PER_CLIENT - f > 0) {
-                success.put(client, (long) (PER_CLIENT - f));
+            if (total - f > 0) {
+                success.put(client, (long) (total - f));
             }
             if (f > 0) {
                 failure.put(client, (long) f);
                 byClientStage.put(client, Map.of("authorization", (long) f));
             }
-            processed += PER_CLIENT;
+            processed += total;
             failed += f;
         }
         return new WindowSnapshot(HOUR, processed, processed, failed, success, failure,
